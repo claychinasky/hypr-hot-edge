@@ -167,7 +167,7 @@ namespace {
 
     const char* configName(int slot, int field, const char* suffix) {
         auto& s = g_configNames[slot * FIELDS_PER_SLOT + field];
-        s       = std::string("plugin:hot-edge:") + EDGE_SLOT_NAMES[slot] + ":" + suffix;
+        s       = std::string("plugin:hyprhotedge:") + EDGE_SLOT_NAMES[slot] + ":" + suffix;
         return s.c_str();
     }
 }
@@ -193,7 +193,7 @@ void CHotEdge::registerConfigValues() {
     // Global, so it needs no entry in g_configNames — a string literal already
     // has the static storage duration IValue's bare const char* name requires.
     m_cornerMarginValue = makeShared<Config::Values::Int>(
-        "plugin:hot-edge:corner_margin",
+        "plugin:hyprhotedge:corner_margin",
         "Gap in px between a corner zone and the edges either side of it", DEFAULT_CORNER_MARGIN);
     if (!HyprlandAPI::addConfigValueV2(PHANDLE, m_cornerMarginValue))
         Log::logger->log(Log::ERR, "[HotEdge] Failed to register config value corner_margin");

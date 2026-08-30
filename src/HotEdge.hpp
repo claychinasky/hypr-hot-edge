@@ -40,7 +40,7 @@ inline bool isCornerSide(EdgeSide s) {
 // both neighbouring edges, leaving a gap the edges never trigger in. The gap is
 // exactly this value: the edge is inset by trigger_width + margin, and the
 // corner occupies the trigger_width part of it.
-// Overridable with the single global plugin:hot-edge:corner_margin.
+// Overridable with the single global plugin:hyprhotedge:corner_margin.
 constexpr int DEFAULT_CORNER_MARGIN = 10;
 
 struct EdgeConfig {
