@@ -19,6 +19,9 @@ pkg_check_modules(DEPS REQUIRED
     libdrm
 )
 
+# Lua headers for the hl.plugin.hot_edge.* bindings (Hyprland links Lua 5.5)
+pkg_search_module(LUA REQUIRED lua5.5 lua-5.5 lua55 lua>=5.5)
+
 # Create the shared library
 add_library(hypr-hot-edge SHARED
     src/main.cpp
@@ -28,6 +31,7 @@ add_library(hypr-hot-edge SHARED
 target_include_directories(hypr-hot-edge PRIVATE
     ${HYPRLAND_INCLUDE_DIRS}
     ${DEPS_INCLUDE_DIRS}
+    ${LUA_INCLUDE_DIRS}
 )
 
 target_compile_options(hypr-hot-edge PRIVATE

@@ -43,12 +43,13 @@ named copy each time, which forces the linker to map the new build.
 To confirm which build is live, query an option that only exists in the new one:
 
 ```bash
-hyprctl getoption plugin:hot-edge:edge9:enabled   # "no such option" => stale image
+hyprctl getoption plugin:hyprhotedge:edge9:enabled   # "no such option" => stale image
 ```
 
 ### Requirements
 
 - Hyprland (built from source or with headers available)
+- Lua 5.5 headers (the version Hyprland links; needed for the `hl.plugin.hyprhotedge` bindings)
 - CMake
 - C++23 compatible compiler
 
@@ -62,7 +63,7 @@ plugin = /path/to/hypr-hot-edge.so
 
 # Configure slots (edge1 through edge16)
 plugin {
-    hot-edge {
+    hyprhotedge {
         # Each slot can be any edge on any monitor
         # side = left/right/top/bottom/topleft/topright/bottomleft/bottomright
         # target_monitor = "*" for all, or specific name like "DP-1"
@@ -162,7 +163,7 @@ So a fullscreen panel needs both halves:
 
 ```conf
 plugin {
-    hot-edge {
+    hyprhotedge {
         edge5 {
             enabled = 1
             side = bottomleft
@@ -223,7 +224,7 @@ decoration {
 
 ### Global Options
 
-Set directly under `hot-edge`, not inside a slot:
+Set directly under `hyprhotedge`, not inside a slot:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -292,13 +293,103 @@ What disable does **not** touch:
 
 State is runtime-only (resets to enabled on plugin load / Hyprland restart).
 
+## Lua configuration (`hyprland.lua`)
+
+Everything above is written for the classic `hyprland.conf`. If Hyprland is
+running your config through Lua (Omarchy does, for one), three things differ.
+
+### Options live under `plugin.hyprhotedge`
+
+The config namespace is `hyprhotedge` (one word, no hyphen) on purpose:
+Hyprland's Lua bridge rewrites hyphens in option paths to underscores, so a
+hyphenated name is spelled one way in `hyprland.conf` and another in Lua.
+
+```lua
+hl.plugin.load(os.getenv("HOME") .. "/hypr-hot-edge/build/hypr-hot-edge.so")
+
+hl.config({
+    plugin = {
+        hyprhotedge = {
+            corner_margin = 100,
+            edge1 = {
+                enabled = 1,
+                side = "right",
+                trigger_width = 15,
+                dwell_time = 150,
+                special_workspace = "hotedge-right-dp3",
+                target_monitor = "DP-3",
+            },
+            edge2 = {
+                enabled = 1,
+                side = "bottomleft",
+                special_workspace = "hotedge-fullscreen",
+                target_monitor = "DP-3",
+                hide_on_leave = 0,
+            },
+        },
+    },
+    decoration = { dim_special = 0.0, blur = { special = false } },
+})
+
+-- gaps_out takes a per-side table, not the "top right bottom left" string.
+hl.workspace_rule({ workspace = "special:hotedge-right-dp3", gaps_out = { left = 1700 } })
+hl.workspace_rule({ workspace = "special:hotedge-fullscreen", gaps_out = 0 })
+
+hl.animation({ leaf = "specialWorkspace", enabled = true, speed = 3, bezier = "almostLinear", style = "fade" })
+```
+
+### Dispatchers are called through `hl.plugin.hyprhotedge`
+
+Lua-mode Hyprland has no way to invoke a named dispatcher such as
+`hotedge:toggle` -- not from `hl.bind`, not from `hl.dispatch`, and not from
+`hyprctl dispatch` either (which is just `hl.dispatch(...)` in that mode). The
+plugin therefore also registers every dispatcher as a Lua function:
+
+| Lua | Equivalent dispatcher |
+|-----|-----------------------|
+| `hl.plugin.hyprhotedge.toggle(arg)` | `hotedge:toggle` |
+| `hl.plugin.hyprhotedge.show(arg)` | `hotedge:show` |
+| `hl.plugin.hyprhotedge.hide(arg)` | `hotedge:hide` |
+| `hl.plugin.hyprhotedge.enable()` | `hotedge:enable` |
+| `hl.plugin.hyprhotedge.disable()` | `hotedge:disable` |
+| `hl.plugin.hyprhotedge.toggle_active()` | `hotedge:toggle-active` |
+
+`arg` is the same string the dispatcher takes (`right`, `bottomleft`, `edge3`,
+...). Each returns `true`, or `false, "error"`.
+
+The `hl.plugin.hyprhotedge` table does not exist on the very first config pass --
+Lua runs before the plugin has loaded -- so a bind must look it up at press
+time, not at config time:
+
+```lua
+local function hotedge(fn, arg)
+    return function()
+        local p = hl.plugin.hyprhotedge
+        if p and p[fn] then p[fn](arg) end
+    end
+end
+
+hl.bind("SUPER + CTRL + H", hotedge("toggle", "right"))
+hl.bind("SUPER + CTRL + B", hotedge("toggle", "bottomleft"))
+hl.bind("SUPER + D", hotedge("toggle_active"))
+```
+
+Test from a shell with `hyprctl repl 'hl.plugin.hyprhotedge.toggle("right")'`.
+
+### First-pass config errors are expected
+
+On a cold start `hyprctl configerrors` may briefly list every
+`plugin.hyprhotedge.*` key as unknown: the plugin registers them after the first
+pass, and Hyprland re-runs the config once it has loaded. If they persist after
+that, the plugin did not load -- see [Troubleshooting](#troubleshooting).
+
 ## Multi-Monitor Setup
 
 For proper multi-monitor support, use **unique workspace names per monitor**. This prevents animation glitches where panels animate from the wrong position.
 
 ```conf
 plugin {
-    hot-edge {
+    hyprhotedge {
         # Monitor 1 - right edge
         edge1 {
             enabled = 1
@@ -359,11 +450,15 @@ shrink the gap; raise `corner_margin` if you keep catching the edge on your way
 into the corner.
 
 ### Config change had no effect
-`hyprctl keyword plugin:hot-edge:...` updates Hyprland's registry but does **not**
+`hyprctl keyword plugin:hyprhotedge:...` updates Hyprland's registry but does **not**
 reach the plugin -- it reads its values on the config-reloaded event, which
 `keyword` does not raise. Edit `hyprland.conf` and run `hyprctl reload` instead.
 `hyprctl getoption` will happily show the new value either way, so it is not a
 reliable check that the setting is live.
+
+In Lua mode, `unknown config key 'plugin.hot_edge...'` (or `hot-edge`) means
+the config still uses the pre-0.5 namespace; it is `hyprhotedge` now. See
+[Lua configuration](#lua-configuration-hyprlandlua).
 
 ### Corner feels slow
 Only the exact corner pixel bypasses `dwell_time`. Set `dwell_time = 0` on the
@@ -389,7 +484,7 @@ will not help -- it moves the edges away, it does not grow the corner.
 plugin = /path/to/hypr-hot-edge.so
 
 plugin {
-    hot-edge {
+    hyprhotedge {
         edge1 {
             enabled = 1
             side = right

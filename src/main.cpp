@@ -4,6 +4,42 @@
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/debug/log/Logger.hpp>
 
+#include <lua.hpp>
+
+namespace {
+    // Lua-mode Hyprland has no way to reach a classic named dispatcher
+    // (hotedge:toggle) from hl.bind / hl.dispatch, so the same handlers are
+    // also exposed as hl.plugin.hyprhotedge.<fn>(arg). Each returns `true`,
+    // or `false, error` on failure, mirroring SDispatchResult.
+    int luaCall(lua_State* L, SDispatchResult (*fn)(std::string)) {
+        const auto res = fn(luaL_optstring(L, 1, ""));
+        lua_pushboolean(L, res.success);
+        if (res.success)
+            return 1;
+        lua_pushstring(L, res.error.c_str());
+        return 2;
+    }
+
+    int luaToggle(lua_State* L) {
+        return luaCall(L, CHotEdge::dispatchToggle);
+    }
+    int luaShow(lua_State* L) {
+        return luaCall(L, CHotEdge::dispatchShow);
+    }
+    int luaHide(lua_State* L) {
+        return luaCall(L, CHotEdge::dispatchHide);
+    }
+    int luaEnable(lua_State* L) {
+        return luaCall(L, CHotEdge::dispatchEnable);
+    }
+    int luaDisable(lua_State* L) {
+        return luaCall(L, CHotEdge::dispatchDisable);
+    }
+    int luaToggleActive(lua_State* L) {
+        return luaCall(L, CHotEdge::dispatchToggleActive);
+    }
+}
+
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
     return HYPRLAND_API_VERSION;
 }
@@ -21,6 +57,16 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addDispatcherV2(PHANDLE, "hotedge:enable", CHotEdge::dispatchEnable);
     HyprlandAPI::addDispatcherV2(PHANDLE, "hotedge:disable", CHotEdge::dispatchDisable);
     HyprlandAPI::addDispatcherV2(PHANDLE, "hotedge:toggle-active", CHotEdge::dispatchToggleActive);
+
+    // Lua API: hl.plugin.hyprhotedge.toggle("right"), .show(...), .hide(...),
+    // .enable(), .disable(), .toggle_active(). Namespace matches the config
+    // path (plugin.hyprhotedge.*).
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprhotedge", "toggle", luaToggle);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprhotedge", "show", luaShow);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprhotedge", "hide", luaHide);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprhotedge", "enable", luaEnable);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprhotedge", "disable", luaDisable);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprhotedge", "toggle_active", luaToggleActive);
 
     // Create the HotEdge instance BEFORE registering callbacks
     g_pHotEdge = std::make_unique<CHotEdge>();
@@ -44,7 +90,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     Log::logger->log(Log::INFO, "[HotEdge] Registered callbacks");
     Log::logger->log(Log::INFO, "[HotEdge] Plugin loaded successfully!");
 
-    return {"hypr-hot-edge", "Hot edge trigger for special workspace overlays (supports multiple edges per monitor)", "claychinasky", "0.4.0"};
+    return {"hypr-hot-edge", "Hot edge trigger for special workspace overlays (supports multiple edges per monitor)", "claychinasky", "0.5.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
